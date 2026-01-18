@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Mellow Fellow | Llama 3.1</title>
+    <!-- CensorCore Library -->
+    <script src="https://cdn.jsdelivr.net/gh/DerrickRichard/CensorCore-Library@latest/CensorCore.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600&family=JetBrains+Mono&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -15,6 +17,7 @@
             --accent: #8b5cf6; /* Violet */
             --accent-glow: rgba(139, 92, 246, 0.3);
             --user-bubble: #1a1a1a;
+            --danger: #ef4444;
         }
 
         * { box-sizing: border-box; }
@@ -70,6 +73,7 @@
         .msg-row { display: flex; flex-direction: column; max-width: 85%; }
         .msg-row.user { align-self: flex-end; align-items: flex-end; }
         .msg-row.ai { align-self: flex-start; }
+        .msg-row.system { align-self: center; text-align: center; max-width: 100%; }
 
         .bubble {
             padding: 14px 18px;
@@ -80,6 +84,8 @@
 
         .user .bubble { background: var(--accent); color: white; border-bottom-right-radius: 2px; }
         .ai .bubble { background: var(--user-bubble); border: 1px solid var(--border); border-bottom-left-radius: 2px; }
+        .system .bubble { background: transparent; color: var(--text-dim); border: 1px dashed var(--border); font-size: 0.8rem; }
+        .blocked .bubble { border-color: var(--danger); color: var(--danger); }
 
         .meta { font-size: 0.7rem; color: var(--text-dim); margin-top: 6px; font-family: 'JetBrains Mono'; }
 
@@ -148,15 +154,15 @@
 <div class="app-wrapper">
     <div class="header">
         <div class="brand">
-            <h1>Mellow Fellow</h1>
+            <h1>MELLOW FELLOW</h1>
             <span class="model-tag">MODEL: LLAMA-3.1-8B-INSTANT</span>
         </div>
-        <div class="meta">SYSTEM STATUS: OPERATIONAL</div>
+        <div id="status" class="meta">SYSTEM STATUS: LOADING...</div>
     </div>
 
     <div id="chat-container">
         <div class="msg-row ai">
-            <div class="bubble">Secure link established. Awaiting instruction.</div>
+            <div class="bubble">Secure link established. CensorCore filtering is active. Awaiting instruction.</div>
         </div>
     </div>
 
@@ -165,12 +171,12 @@
     <div class="input-section">
         <div class="input-wrapper">
             <input type="text" id="user-input" placeholder="Enter command..." autocomplete="off">
-            <button id="send-btn" onclick="execute()">SEND</button>
+            <button id="send-btn" onclick="execute()" disabled>SEND</button>
         </div>
         
         <div class="footer-info">
             <div class="disclaimer">
-                <strong>NOTICE:</strong> AI-generated content may be inaccurate or misleading. Verify critical information independently.
+                <strong>NOTICE:</strong> AI-generated content may be inaccurate. <strong>CensorCore</strong> filtering enabled to prevent policy violations.
             </div>
             <div class="limits">
                 <strong>GLOBAL LIMIT:</strong> 30 RPM<br>
@@ -185,12 +191,32 @@
     const input = document.getElementById('user-input');
     const btn = document.getElementById('send-btn');
     const loader = document.getElementById('loader');
+    const status = document.getElementById('status');
+
+    // Wait for CensorCore to be ready
+    censor.onReady(() => {
+        status.textContent = "SYSTEM STATUS: OPERATIONAL";
+        btn.disabled = false;
+    });
+
+    censor.onError(() => {
+        status.textContent = "SYSTEM STATUS: FILTER_ERROR";
+        status.style.color = "var(--danger)";
+    });
 
     input.addEventListener('keypress', (e) => { if(e.key === 'Enter') execute(); });
 
     async function execute() {
         const text = input.value.trim();
         if(!text) return;
+
+        // Perform Pre-Inference Censorship
+        const analysis = censor.analyze(text);
+        if(analysis.blocked) {
+            appendPulse('system blocked', `SECURITY_ALERT: Input blocked (Rule: ${analysis.category}). Instruction discarded.`);
+            input.value = '';
+            return;
+        }
 
         appendPulse('user', text);
         input.value = '';
@@ -203,9 +229,18 @@
                 body: JSON.stringify({ message: text })
             });
             const data = await res.json();
-            appendPulse('ai', data.reply || data.error);
+            
+            const reply = data.reply || data.error;
+            
+            // Perform Post-Inference Censorship on AI Output
+            if(censor.isBlocked(reply)) {
+                appendPulse('system blocked', "POLICE_ALERT: AI output intercepted and redacted due to safety violation.");
+            } else {
+                appendPulse('ai', reply);
+            }
+
         } catch (e) {
-            appendPulse('ai', "CRITICAL_ERROR: Connection failed.");
+            appendPulse('system', "CRITICAL_ERROR: Connection failed.");
         } finally {
             toggleState(false);
         }
@@ -216,7 +251,7 @@
         row.className = `msg-row ${type}`;
         row.innerHTML = `
             <div class="bubble">${content}</div>
-            <div class="meta">${type.toUpperCase()} // ${new Date().toLocaleTimeString()}</div>
+            <div class="meta">${type.split(' ')[0].toUpperCase()} // ${new Date().toLocaleTimeString()}</div>
         `;
         container.appendChild(row);
         container.scrollTop = container.scrollHeight;
